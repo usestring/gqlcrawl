@@ -8,6 +8,6 @@ Use the repository's **Security** tab and **Report a vulnerability** flow to con
 
 ## Scope
 
-Security-sensitive behavior includes public-address validation, DNS pinning, redirect handling, TLS verification, traffic bounds, output redaction, query scope, and denylist enforcement.
+Security-sensitive behavior includes public-address validation, DNS pinning, redirect handling, TLS verification, robots enforcement, evidence classification, crawl and traffic bounds, output redaction, query scope, and denylist enforcement.
 
 The maintainers do not authorize testing against third-party systems. Use an offline fixture or a target you control.

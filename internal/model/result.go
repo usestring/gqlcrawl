@@ -24,6 +24,7 @@ const (
 	ReasonPolicyRejected           Reason = "policy_rejected"
 	ReasonDNSNonPublic             Reason = "dns_non_public"
 	ReasonRedirectRejected         Reason = "redirect_rejected"
+	ReasonRobotsDisallowed         Reason = "robots_disallowed"
 	ReasonTimeout                  Reason = "timeout"
 	ReasonResponseTooLarge         Reason = "response_too_large"
 	ReasonHTTPError                Reason = "http_error"

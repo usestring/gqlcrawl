@@ -96,6 +96,80 @@ func TestRunCapsUniqueCandidatesPerHost(t *testing.T) {
 	}
 }
 
+func TestRunHonorsPrecomputedSkipReason(t *testing.T) {
+	prober := &recordingProber{}
+	results, err := Run(context.Background(), []source.Candidate{{
+		Raw:        "https://example.test/graphql",
+		Source:     model.Source{Kind: "crawl", Input: "https://example.test/"},
+		SkipReason: model.ReasonRobotsDisallowed,
+	}}, 1, time.Now, prober)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prober.mu.Lock()
+	callCount := len(prober.calls)
+	prober.mu.Unlock()
+	if callCount != 0 {
+		t.Fatalf("probe calls = %d, want 0", callCount)
+	}
+	if len(results) != 1 ||
+		results[0].Reason != model.ReasonRobotsDisallowed ||
+		results[0].GraphQL != model.GraphQLIndeterminate ||
+		results[0].Introspection != model.IntrospectionIndeterminate {
+		t.Fatalf("result = %#v", results)
+	}
+}
+
+func TestRunKeepsSkipReasonsCandidateSpecific(t *testing.T) {
+	endpoint := "https://example.test/graphql"
+	tests := []struct {
+		name       string
+		candidates []source.Candidate
+	}{
+		{
+			name: "permitted first",
+			candidates: []source.Candidate{
+				{Raw: endpoint},
+				{Raw: endpoint, SkipReason: model.ReasonRobotsDisallowed},
+			},
+		},
+		{
+			name: "skipped first",
+			candidates: []source.Candidate{
+				{Raw: endpoint, SkipReason: model.ReasonRobotsDisallowed},
+				{Raw: endpoint},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			prober := &recordingProber{}
+			results, err := Run(context.Background(), test.candidates, 1, time.Now, prober)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prober.mu.Lock()
+			callCount := len(prober.calls)
+			prober.mu.Unlock()
+			if callCount != 1 {
+				t.Fatalf("probe calls = %d, want 1", callCount)
+			}
+			if len(results) != 2 {
+				t.Fatalf("results = %d, want 2", len(results))
+			}
+			for index, candidate := range test.candidates {
+				expected := model.ReasonIntrospectionEnabled
+				if candidate.SkipReason != "" {
+					expected = candidate.SkipReason
+				}
+				if results[index].Reason != expected {
+					t.Fatalf("result %d reason = %q, want %q", index, results[index].Reason, expected)
+				}
+			}
+		})
+	}
+}
 func TestRunRejectsInvalidConfiguration(t *testing.T) {
 	_, err := Run(context.Background(), nil, 0, time.Now, &recordingProber{})
 	if err == nil {
