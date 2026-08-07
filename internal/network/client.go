@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +17,19 @@ import (
 )
 
 type DialContextFunc func(context.Context, string, string) (net.Conn, error)
+
+type HTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+type redirectLimitedClient struct {
+	client       *Client
+	maxRedirects int
+}
+
+func (c *redirectLimitedClient) Do(request *http.Request) (*http.Response, error) {
+	return c.client.do(request, c.maxRedirects)
+}
 
 type ClientConfig struct {
 	Policy       *Policy
@@ -27,6 +42,8 @@ type ClientConfig struct {
 type Client struct {
 	httpClient   *http.Client
 	timeout      time.Duration
+	policy       *Policy
+	maxRedirects int
 	perHostDelay time.Duration
 	gates        sync.Map
 }
@@ -47,7 +64,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	if config.MaxRedirects < 0 || config.MaxRedirects > 2 {
 		return nil, fmt.Errorf("max redirects must be between zero and two")
 	}
-	if config.PerHostRPS <= 0 || config.PerHostRPS > 10 {
+	if math.IsNaN(config.PerHostRPS) || math.IsInf(config.PerHostRPS, 0) || config.PerHostRPS <= 0 || config.PerHostRPS > 10 {
 		return nil, fmt.Errorf("per-host rate must be greater than zero and at most ten")
 	}
 	if config.DialContext == nil {
@@ -56,79 +73,127 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}
 
 	client := &Client{
+		policy:       config.Policy,
+		maxRedirects: config.MaxRedirects,
 		timeout:      config.Timeout,
 		perHostDelay: time.Duration(float64(time.Second) / config.PerHostRPS),
 	}
 	client.httpClient = &http.Client{
-		Transport: &pinnedTransport{
-			policy:      config.Policy,
-			dialContext: config.DialContext,
-		},
-		CheckRedirect: func(request *http.Request, via []*http.Request) error {
-			if len(via) > config.MaxRedirects {
-				return &ClassifiedError{
-					Reason: model.ReasonRedirectRejected,
-					Err:    fmt.Errorf("redirect limit exceeded"),
-				}
-			}
-			if request.Method != http.MethodPost {
-				return &ClassifiedError{
-					Reason: model.ReasonRedirectRejected,
-					Err:    fmt.Errorf("redirect changed the request method"),
-				}
-			}
-			if _, _, err := config.Policy.Validate(request.Context(), request.URL.String()); err != nil {
-				return &ClassifiedError{
-					Reason: model.ReasonRedirectRejected,
-					Err:    fmt.Errorf("redirect violates network policy: %w", err),
-				}
-			}
-			return nil
+		Transport: &rateLimitedTransport{
+			client: client,
+			next: &pinnedTransport{
+				policy:      config.Policy,
+				dialContext: config.DialContext,
+			},
 		},
 	}
 	return client, nil
 }
 
 func (c *Client) Do(request *http.Request) (*http.Response, error) {
+	return c.do(request, c.maxRedirects)
+}
+
+func (c *Client) WithoutRedirects() HTTPDoer {
+	return &redirectLimitedClient{client: c}
+}
+
+func (c *Client) do(request *http.Request, maxRedirects int) (*http.Response, error) {
 	ctx, cancel := context.WithTimeout(request.Context(), c.timeout)
 	request = request.Clone(ctx)
 
-	host := request.URL.Hostname()
-	if host == "" {
+	httpClient := *c.httpClient
+	httpClient.CheckRedirect = c.checkRedirect(maxRedirects)
+	response, err := httpClient.Do(request)
+	if err != nil {
 		cancel()
+		return nil, err
+	}
+
+	body := &managedBody{
+		ReadCloser:  response.Body,
+		cleanupFunc: cancel,
+	}
+	response.Body = body
+	go func() {
+		<-ctx.Done()
+		body.Close()
+	}()
+
+	return response, nil
+}
+
+func (c *Client) checkRedirect(maxRedirects int) func(*http.Request, []*http.Request) error {
+	return func(request *http.Request, via []*http.Request) error {
+		if len(via) > maxRedirects {
+			return &ClassifiedError{
+				Reason: model.ReasonRedirectRejected,
+				Err:    fmt.Errorf("redirect limit exceeded"),
+			}
+		}
+		if len(via) == 0 {
+			return &ClassifiedError{
+				Reason: model.ReasonRedirectRejected,
+				Err:    fmt.Errorf("redirect history is empty"),
+			}
+		}
+		previousMethod := via[len(via)-1].Method
+		if request.Method != previousMethod {
+			return &ClassifiedError{
+				Reason: model.ReasonRedirectRejected,
+				Err:    fmt.Errorf("redirect changed the request method from %s to %s", previousMethod, request.Method),
+			}
+		}
+		if _, _, err := c.policy.Validate(request.Context(), request.URL.String()); err != nil {
+			return &ClassifiedError{
+				Reason: model.ReasonRedirectRejected,
+				Err:    fmt.Errorf("redirect violates network policy: %w", err),
+			}
+		}
+		return nil
+	}
+}
+
+type rateLimitedTransport struct {
+	client *Client
+	next   http.RoundTripper
+}
+
+func (t *rateLimitedTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	host := strings.ToLower(strings.TrimSuffix(request.URL.Hostname(), "."))
+	if host == "" {
 		return nil, &ClassifiedError{
 			Reason: model.ReasonPolicyRejected,
 			Err:    fmt.Errorf("request URL has no host"),
 		}
 	}
 
-	release, err := c.acquire(ctx, host)
+	release, err := t.client.acquire(request.Context(), host)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
-
-	response, err := c.httpClient.Do(request)
+	response, err := t.next.RoundTrip(request)
 	if err != nil {
 		release()
-		cancel()
 		return nil, err
 	}
-
-	body := &managedBody{
+	response.Body = &rateLimitedBody{
 		ReadCloser: response.Body,
-		cleanupFunc: func() {
-			release()
-			cancel()
-		},
+		release:    release,
 	}
-	response.Body = body
-	go func() {
-		<-ctx.Done()
-		body.cleanup()
-	}()
-
 	return response, nil
+}
+
+type rateLimitedBody struct {
+	io.ReadCloser
+	once    sync.Once
+	release func()
+}
+
+func (b *rateLimitedBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.once.Do(b.release)
+	return err
 }
 
 func (c *Client) acquire(ctx context.Context, host string) (func(), error) {

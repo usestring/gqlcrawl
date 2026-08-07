@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/signal"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/usestring/gqlcrawl/internal/crawl"
 	"github.com/usestring/gqlcrawl/internal/network"
 	"github.com/usestring/gqlcrawl/internal/output"
 	"github.com/usestring/gqlcrawl/internal/probe"
@@ -35,6 +37,19 @@ type probeConfig struct {
 	allowHTTP       bool
 }
 
+type crawlConfig struct {
+	probeConfig
+	maxPagesPerHost int
+	maxDepth        int
+	respectRobots   bool
+}
+
+type probeRuntime struct {
+	client    *network.Client
+	prober    *probe.Prober
+	userAgent string
+}
+
 func defaultProbeConfig() probeConfig {
 	return probeConfig{
 		format:          "jsonl",
@@ -42,6 +57,15 @@ func defaultProbeConfig() probeConfig {
 		perHostRPS:      1,
 		timeout:         10 * time.Second,
 		maxResponseSize: 64 * 1024,
+	}
+}
+
+func defaultCrawlConfig() crawlConfig {
+	return crawlConfig{
+		probeConfig:     defaultProbeConfig(),
+		maxPagesPerHost: 25,
+		maxDepth:        2,
+		respectRobots:   true,
 	}
 }
 
@@ -66,6 +90,8 @@ func run(ctx context.Context, arguments []string, stdin io.Reader, stdout io.Wri
 		return 0
 	case "probe":
 		return runProbe(ctx, arguments[1:], stdin, stdout, stderr)
+	case "crawl":
+		return runCrawl(ctx, arguments[1:], stdin, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", arguments[0])
 		writeRootHelp(stderr)
@@ -84,40 +110,17 @@ func runProbe(ctx context.Context, arguments []string, stdin io.Reader, stdout i
 		return 2
 	}
 
-	denylist, err := network.LoadDenylist(config.denylistPath)
+	runtime, err := buildProbeRuntime(config)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	policy := network.NewPolicy(config.allowHTTP, denylist, nil)
-	client, err := network.NewClient(network.ClientConfig{
-		Policy:       policy,
-		Timeout:      config.timeout,
-		MaxRedirects: 2,
-		PerHostRPS:   config.perHostRPS,
-	})
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 2
-	}
-
-	userAgent, err := makeUserAgent(config.contact)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 2
-	}
-	introspectionProber, err := probe.New(client, config.maxResponseSize, userAgent)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 2
-	}
-
 	candidates, err := source.Load(endpointArguments, config.inputPath, stdin)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	results, err := runner.Run(ctx, candidates, config.workers, time.Now, introspectionProber)
+	results, err := runner.Run(ctx, candidates, config.workers, time.Now, runtime.prober)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -129,18 +132,116 @@ func runProbe(ctx context.Context, arguments []string, stdin io.Reader, stdout i
 	return 0
 }
 
+func runCrawl(ctx context.Context, arguments []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+	config, seedArguments, err := parseCrawlArguments(arguments)
+	if errors.Is(err, errHelp) {
+		writeCrawlHelp(stdout)
+		return 0
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+
+	runtime, err := buildProbeRuntime(config.probeConfig)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	seeds, err := source.Load(seedArguments, config.inputPath, stdin)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	discoveryCrawler, err := crawl.New(crawl.Config{
+		Client:           runtime.client.WithoutRedirects(),
+		MaxResponseBytes: config.maxResponseSize,
+		MaxPagesPerHost:  config.maxPagesPerHost,
+		MaxDepth:         config.maxDepth,
+		RespectRobots:    config.respectRobots,
+		UserAgent:        runtime.userAgent,
+	})
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	candidates, discoveryErr := discoveryCrawler.Discover(ctx, seeds)
+	results, err := runner.Run(ctx, candidates, config.workers, time.Now, runtime.prober)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if err := output.WriteJSONL(stdout, results); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if discoveryErr != nil {
+		fmt.Fprintf(stderr, "crawl incomplete: %v\n", discoveryErr)
+		return 1
+	}
+	return 0
+}
+
+func buildProbeRuntime(config probeConfig) (probeRuntime, error) {
+	client, err := buildNetworkClient(config)
+	if err != nil {
+		return probeRuntime{}, err
+	}
+
+	userAgent, err := makeUserAgent(config.contact)
+	if err != nil {
+		return probeRuntime{}, err
+	}
+	introspectionProber, err := probe.New(client, config.maxResponseSize, userAgent)
+	if err != nil {
+		return probeRuntime{}, err
+	}
+	return probeRuntime{
+		client:    client,
+		prober:    introspectionProber,
+		userAgent: userAgent,
+	}, nil
+}
+
+func buildNetworkClient(config probeConfig) (*network.Client, error) {
+	denylist, err := network.LoadDenylist(config.denylistPath)
+	if err != nil {
+		return nil, err
+	}
+	policy := network.NewPolicy(config.allowHTTP, denylist, nil)
+	client, err := network.NewClient(network.ClientConfig{
+		Policy:       policy,
+		Timeout:      config.timeout,
+		MaxRedirects: 2,
+		PerHostRPS:   config.perHostRPS,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
 func parseProbeArguments(arguments []string) (probeConfig, []string, error) {
-	config := defaultProbeConfig()
-	var endpoints []string
+	config, inputs, err := parseCommandArguments(arguments, false)
+	return config.probeConfig, inputs, err
+}
+
+func parseCrawlArguments(arguments []string) (crawlConfig, []string, error) {
+	return parseCommandArguments(arguments, true)
+}
+
+func parseCommandArguments(arguments []string, allowCrawlOptions bool) (crawlConfig, []string, error) {
+	config := defaultCrawlConfig()
+	var inputs []string
 
 	for index := 0; index < len(arguments); index++ {
 		argument := arguments[index]
 		if argument == "--" {
-			endpoints = append(endpoints, arguments[index+1:]...)
+			inputs = append(inputs, arguments[index+1:]...)
 			break
 		}
 		if !strings.HasPrefix(argument, "-") {
-			endpoints = append(endpoints, argument)
+			inputs = append(inputs, argument)
 			continue
 		}
 
@@ -150,6 +251,10 @@ func parseProbeArguments(arguments []string) (probeConfig, []string, error) {
 		}
 		if name == "allow-http" && !hasValue {
 			config.allowHTTP = true
+			continue
+		}
+		if allowCrawlOptions && name == "respect-robots" && !hasValue {
+			config.respectRobots = true
 			continue
 		}
 		if !hasValue {
@@ -180,6 +285,21 @@ func parseProbeArguments(arguments []string) (probeConfig, []string, error) {
 			config.contact = value
 		case "allow-http":
 			config.allowHTTP, err = strconv.ParseBool(value)
+		case "max-pages-per-host":
+			if !allowCrawlOptions {
+				return config, nil, fmt.Errorf("unknown option --%s", name)
+			}
+			config.maxPagesPerHost, err = strconv.Atoi(value)
+		case "max-depth":
+			if !allowCrawlOptions {
+				return config, nil, fmt.Errorf("unknown option --%s", name)
+			}
+			config.maxDepth, err = strconv.Atoi(value)
+		case "respect-robots":
+			if !allowCrawlOptions {
+				return config, nil, fmt.Errorf("unknown option --%s", name)
+			}
+			config.respectRobots, err = strconv.ParseBool(value)
 		default:
 			return config, nil, fmt.Errorf("unknown option --%s", name)
 		}
@@ -194,7 +314,7 @@ func parseProbeArguments(arguments []string) (probeConfig, []string, error) {
 	if config.workers <= 0 || config.workers > 64 {
 		return config, nil, fmt.Errorf("--workers must be between 1 and 64")
 	}
-	if config.perHostRPS <= 0 || config.perHostRPS > 10 {
+	if math.IsNaN(config.perHostRPS) || math.IsInf(config.perHostRPS, 0) || config.perHostRPS <= 0 || config.perHostRPS > 10 {
 		return config, nil, fmt.Errorf("--per-host-rps must be greater than 0 and at most 10")
 	}
 	if config.timeout <= 0 || config.timeout > time.Minute {
@@ -203,8 +323,16 @@ func parseProbeArguments(arguments []string) (probeConfig, []string, error) {
 	if config.maxResponseSize <= 0 || config.maxResponseSize > 1024*1024 {
 		return config, nil, fmt.Errorf("--max-response-bytes must be between 1 and 1048576")
 	}
+	if allowCrawlOptions {
+		if config.maxPagesPerHost <= 0 || config.maxPagesPerHost > 100 {
+			return config, nil, fmt.Errorf("--max-pages-per-host must be between 1 and 100")
+		}
+		if config.maxDepth < 0 || config.maxDepth > 4 {
+			return config, nil, fmt.Errorf("--max-depth must be between 0 and 4")
+		}
+	}
 
-	return config, endpoints, nil
+	return config, inputs, nil
 }
 
 func makeUserAgent(contact string) (string, error) {
@@ -227,15 +355,31 @@ func writeRootHelp(writer io.Writer) {
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Usage:")
 	fmt.Fprintln(writer, "  gqlcrawl probe [options] [URL...]")
+	fmt.Fprintln(writer, "  gqlcrawl crawl [options] [DOMAIN|URL...]")
 	fmt.Fprintln(writer, "  gqlcrawl version")
 }
 
 func writeProbeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "Usage: gqlcrawl probe [options] [URL...]")
 	fmt.Fprintln(writer)
+	writeCommonHelp(writer)
+}
+
+func writeCrawlHelp(writer io.Writer) {
+	fmt.Fprintln(writer, "Usage: gqlcrawl crawl [options] [DOMAIN|URL...]")
+	fmt.Fprintln(writer)
+	fmt.Fprintln(writer, "Discovery options:")
+	fmt.Fprintln(writer, "  --max-pages-per-host N      Page limit per host (default 25, max 100)")
+	fmt.Fprintln(writer, "  --max-depth N               Same-origin link depth (default 2, max 4)")
+	fmt.Fprintln(writer, "  --respect-robots=true|false Honor robots.txt (default true)")
+	fmt.Fprintln(writer)
+	writeCommonHelp(writer)
+}
+
+func writeCommonHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "Options:")
-	fmt.Fprintln(writer, "  --input FILE|-              Read additional URLs from a file or stdin")
-	fmt.Fprintln(writer, "  --workers N                 Global workers (default 16, max 64)")
+	fmt.Fprintln(writer, "  --input FILE|-              Read additional inputs from a file or stdin")
+	fmt.Fprintln(writer, "  --workers N                 Global probe workers (default 16, max 64)")
 	fmt.Fprintln(writer, "  --per-host-rps N            Per-host requests per second (default 1, max 10)")
 	fmt.Fprintln(writer, "  --timeout DURATION          Overall request timeout (default 10s, max 1m)")
 	fmt.Fprintln(writer, "  --max-response-bytes N      Response body limit (default 65536, max 1048576)")

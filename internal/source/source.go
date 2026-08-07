@@ -15,8 +15,9 @@ import (
 const maxInputLineBytes = 1024 * 1024
 
 type Candidate struct {
-	Raw    string
-	Source model.Source
+	Raw        string
+	Source     model.Source
+	SkipReason model.Reason
 }
 
 func Load(arguments []string, inputPath string, stdin io.Reader) ([]Candidate, error) {
@@ -82,7 +83,7 @@ func appendLines(candidates []Candidate, reader io.Reader, kind string, input st
 func NormalizeURL(raw string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return "", fmt.Errorf("parse URL: %w", err)
+		return "", fmt.Errorf("parse URL")
 	}
 	if parsed.Scheme == "" || parsed.Hostname() == "" {
 		return "", fmt.Errorf("URL must include a scheme and host")

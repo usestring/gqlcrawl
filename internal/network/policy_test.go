@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -166,6 +167,156 @@ func TestClientRejectsPublicToPrivateRedirect(t *testing.T) {
 	assertReason(t, err, model.ReasonRedirectRejected)
 }
 
+func TestClientAllowsGETRedirectWithoutMethodChange(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/start" {
+			http.Redirect(writer, request, "/final", http.StatusFound)
+			return
+		}
+		writer.WriteHeader(http.StatusOK)
+		io.WriteString(writer, "done")
+	}))
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := newLocalFixtureClient(t, server.Listener.Addr().String(), staticResolver{
+		"public.test": {net.ParseIP("93.184.216.34")},
+	}, nil)
+	request, err := http.NewRequest(http.MethodGet, "http://public.test:"+serverURL.Port()+"/start", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.Request.URL.Path != "/final" {
+		t.Fatalf("final URL = %s", response.Request.URL)
+	}
+}
+
+func TestClientRejectsPOSTRedirectThatChangesMethod(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, "/final", http.StatusFound)
+	}))
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := newLocalFixtureClient(t, server.Listener.Addr().String(), staticResolver{
+		"public.test": {net.ParseIP("93.184.216.34")},
+	}, nil)
+	request, err := http.NewRequest(
+		http.MethodPost,
+		"http://public.test:"+serverURL.Port()+"/start",
+		strings.NewReader("{}"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Do(request)
+	if err == nil {
+		t.Fatal("expected redirect rejection")
+	}
+	assertReason(t, err, model.ReasonRedirectRejected)
+}
+
+func TestClientRejectsRedirectWhenDisabled(t *testing.T) {
+	var requestCount atomic.Int32
+	var serverURL *url.URL
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requestCount.Add(1)
+		http.Redirect(writer, request, "http://public.test:"+serverURL.Port()+"/final", http.StatusTemporaryRedirect)
+	}))
+	defer server.Close()
+
+	var err error
+	serverURL, err = url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := NewClient(ClientConfig{
+		Policy:       NewPolicy(true, nil, staticResolver{"public.test": {net.ParseIP("93.184.216.34")}}),
+		Timeout:      time.Second,
+		MaxRedirects: 2,
+		PerHostRPS:   10,
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodGet, "http://public.test:"+serverURL.Port()+"/start", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.WithoutRedirects().Do(request)
+	if err == nil {
+		t.Fatal("expected redirect rejection")
+	}
+	assertReason(t, err, model.ReasonRedirectRejected)
+	if requestCount.Load() != 1 {
+		t.Fatalf("requests = %d, want 1", requestCount.Load())
+	}
+}
+
+func TestClientGatesRedirectDestination(t *testing.T) {
+	var serverURL *url.URL
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/start" {
+			http.Redirect(writer, request, "http://DESTINATION.test.:"+serverURL.Port()+"/final", http.StatusTemporaryRedirect)
+			return
+		}
+		io.WriteString(writer, "done")
+	}))
+	defer server.Close()
+
+	var err error
+	serverURL, err = url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := newLocalFixtureClient(t, server.Listener.Addr().String(), staticResolver{
+		"source.test":      {net.ParseIP("93.184.216.34")},
+		"destination.test": {net.ParseIP("93.184.216.35")},
+	}, nil)
+	request, err := http.NewRequest(http.MethodGet, "http://source.test:"+serverURL.Port()+"/start", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if _, found := client.gates.Load("destination.test"); !found {
+		t.Fatal("redirect destination did not acquire its host gate")
+	}
+	if _, found := client.gates.Load("DESTINATION.test."); found {
+		t.Fatal("redirect destination acquired a non-canonical host gate")
+	}
+}
+
+func TestClientRejectsNonFinitePerHostRate(t *testing.T) {
+	for _, rate := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		_, err := NewClient(ClientConfig{
+			Policy:       NewPolicy(true, nil, staticResolver{}),
+			Timeout:      time.Second,
+			MaxRedirects: 0,
+			PerHostRPS:   rate,
+		})
+		if err == nil {
+			t.Fatalf("rate %v was accepted", rate)
+		}
+	}
+}
 func TestClientSerializesRequestsPerHost(t *testing.T) {
 	var active atomic.Int32
 	var maximum atomic.Int32

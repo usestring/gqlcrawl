@@ -32,11 +32,39 @@ func TestParseProbeArgumentsEnforcesSafetyBounds(t *testing.T) {
 		{"--per-host-rps=10.1"},
 		{"--timeout=61s"},
 		{"--max-response-bytes=1048577"},
+		{"--per-host-rps=NaN"},
+		{"--per-host-rps=+Inf"},
+		{"--per-host-rps=-Inf"},
 	}
 	for _, arguments := range tests {
 		if _, _, err := parseProbeArguments(arguments); err == nil {
 			t.Fatalf("arguments %v were accepted", arguments)
 		}
+	}
+}
+
+func TestParseCrawlArgumentsAcceptsBoundedDiscoveryOptions(t *testing.T) {
+	config, seeds, err := parseCrawlArguments([]string{
+		"example.test",
+		"--max-pages-per-host=12",
+		"--max-depth", "1",
+		"--respect-robots=false",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.maxPagesPerHost != 12 || config.maxDepth != 1 || config.respectRobots {
+		t.Fatalf("config = %#v", config)
+	}
+	if len(seeds) != 1 || seeds[0] != "example.test" {
+		t.Fatalf("seeds = %v", seeds)
+	}
+
+	if _, _, err := parseCrawlArguments([]string{"--max-pages-per-host=101"}); err == nil {
+		t.Fatal("expected crawl page-limit validation error")
+	}
+	if _, _, err := parseProbeArguments([]string{"--max-depth=1"}); err == nil {
+		t.Fatal("probe unexpectedly accepted a crawl-only option")
 	}
 }
 
@@ -78,6 +106,25 @@ func TestRunHelp(t *testing.T) {
 		t.Fatalf("exit code = %d", exitCode)
 	}
 	if !strings.Contains(stdout.String(), "--denylist FILE") {
+		t.Fatalf("help = %q", stdout.String())
+	}
+}
+
+func TestRunCrawlHelp(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := run(
+		context.Background(),
+		[]string{"crawl", "--help"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 0 {
+		t.Fatalf("exit code = %d", exitCode)
+	}
+	if !strings.Contains(stdout.String(), "--respect-robots=true|false") ||
+		!strings.Contains(stdout.String(), "--max-pages-per-host N") {
 		t.Fatalf("help = %q", stdout.String())
 	}
 }

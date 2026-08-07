@@ -88,6 +88,9 @@ func Run(ctx context.Context, candidates []source.Candidate, workers int, clock 
 	results := make([]model.Result, 0, len(candidates))
 	for _, candidate := range candidates {
 		outcome := outcomes[candidateKey(candidate.Raw)]
+		if candidate.SkipReason != "" {
+			outcome = skippedOutcome(candidate)
+		}
 		results = append(results, model.Result{
 			SchemaVersion: "1",
 			Endpoint:      source.SanitizeURL(candidate.Raw),
@@ -111,6 +114,9 @@ func buildJobs(candidates []source.Candidate) ([]job, map[string]model.ProbeOutc
 
 	for _, candidate := range candidates {
 		key := candidateKey(candidate.Raw)
+		if candidate.SkipReason != "" {
+			continue
+		}
 		if _, found := seen[key]; found {
 			continue
 		}
@@ -132,6 +138,15 @@ func buildJobs(candidates []source.Candidate) ([]job, map[string]model.ProbeOutc
 		jobs = append(jobs, job{key: key, raw: candidate.Raw})
 	}
 	return jobs, outcomes
+}
+
+func skippedOutcome(candidate source.Candidate) model.ProbeOutcome {
+	return model.ProbeOutcome{
+		Endpoint:      source.SanitizeURL(candidate.Raw),
+		GraphQL:       model.GraphQLIndeterminate,
+		Introspection: model.IntrospectionIndeterminate,
+		Reason:        candidate.SkipReason,
+	}
 }
 
 func candidateKey(raw string) string {
