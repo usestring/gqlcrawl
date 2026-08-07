@@ -1,0 +1,2 @@
+# Add verified public opt-out hostnames here, one per line.
+# Use .example.com to include all subdomains.
