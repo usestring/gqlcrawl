@@ -1,0 +1,4 @@
+/gqlcrawl
+coverage.out
+dist/
+.DS_Store
