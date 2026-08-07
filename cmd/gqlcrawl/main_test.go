@@ -128,3 +128,30 @@ func TestRunCrawlHelp(t *testing.T) {
 		t.Fatalf("help = %q", stdout.String())
 	}
 }
+
+func TestRunVersionUsesInjectedVersion(t *testing.T) {
+	originalVersion := version
+	version = "v1.2.3"
+	t.Cleanup(func() {
+		version = originalVersion
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := run(
+		context.Background(),
+		[]string{"version"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 0 {
+		t.Fatalf("exit code = %d", exitCode)
+	}
+	if stdout.String() != "v1.2.3\n" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}

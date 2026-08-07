@@ -46,6 +46,14 @@ A block, timeout, authentication response, rate limit, redirect rejection, or tr
 
 Go 1.24.5 or newer is required.
 
+Install the latest tagged version directly from source:
+
+```sh
+go install github.com/usestring/gqlcrawl/cmd/gqlcrawl@latest
+```
+
+Tagged releases also publish Linux, macOS, and Windows binaries with SHA-256 checksums on the [GitHub releases page](https://github.com/usestring/gqlcrawl/releases).
+
 ```sh
 go build ./cmd/gqlcrawl
 go test -race ./...
