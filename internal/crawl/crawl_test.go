@@ -160,6 +160,79 @@ func TestDiscoverReusesSharedScriptAcrossDocumentOrigins(t *testing.T) {
 	}
 }
 
+func TestDiscoverIgnoresInertMarkupReferences(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "commented script",
+			body: `<!-- <script src="https://unrelated.test/app.js"></script> -->`,
+		},
+		{
+			name: "data source",
+			body: `<script data-src="https://unrelated.test/app.js"></script>`,
+		},
+		{
+			name: "script source text",
+			body: `<script>const markup = '<script src="https://unrelated.test/app.js"></script>';</script>`,
+		},
+		{
+			name: "commented link",
+			body: `<!-- <a href="/hidden">hidden</a> -->`,
+		},
+		{
+			name: "data link",
+			body: `<a data-href="/hidden">hidden</a>`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			doer := &fixtureDoer{responses: map[string]fixtureResponse{
+				"https://seed.test/": {
+					contentType: "text/html",
+					body:        test.body,
+				},
+				"https://unrelated.test/app.js": {contentType: "application/javascript"},
+				"https://seed.test/hidden":      {contentType: "text/html"},
+			}}
+			crawler := newFixtureCrawler(t, doer, 25, 2, false)
+
+			_, err := crawler.Discover(context.Background(), []source.Candidate{{
+				Raw:    "seed.test",
+				Source: model.Source{Kind: "argument"},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Join(doer.calls, ",") != "https://seed.test/" {
+				t.Fatalf("inert markup triggered requests: %v", doer.calls)
+			}
+		})
+	}
+}
+
+func TestDiscoverFindsAbsoluteURLInJavaScriptTemplateLiteral(t *testing.T) {
+	doer := &fixtureDoer{responses: map[string]fixtureResponse{
+		"https://seed.test/": {
+			contentType: "text/html",
+			body:        `<script>const endpoint = ` + "`https://api.test/graphql`" + `;</script>`,
+		},
+	}}
+	crawler := newFixtureCrawler(t, doer, 25, 2, false)
+
+	candidates, err := crawler.Discover(context.Background(), []source.Candidate{{
+		Raw:    "seed.test",
+		Source: model.Source{Kind: "argument"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].Raw != "https://api.test/graphql" {
+		t.Fatalf("candidates = %#v", candidates)
+	}
+}
+
 func TestDiscoverTreatsSeedResponseSignatureAsCandidate(t *testing.T) {
 	doer := &fixtureDoer{responses: map[string]fixtureResponse{
 		"https://seed.test/custom?token=secret": {

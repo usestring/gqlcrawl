@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"mime"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/usestring/gqlcrawl/internal/model"
 	"github.com/usestring/gqlcrawl/internal/source"
+	htmltokenizer "golang.org/x/net/html"
 )
 
 const (
@@ -27,11 +27,7 @@ const (
 )
 
 var (
-	anchorPattern       = regexp.MustCompile(`(?is)<a\b[^>]*>`)
-	scriptPattern       = regexp.MustCompile(`(?is)<script\b[^>]*>`)
-	hrefPattern         = regexp.MustCompile(`(?is)\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))`)
-	srcPattern          = regexp.MustCompile(`(?is)\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))`)
-	referencePattern    = regexp.MustCompile(`(?i)https?://[^\s"'<>\\]+|(?:\.\.?/|/)[A-Za-z0-9_~!$&()*+,;=:@%./?\-]+`)
+	referencePattern    = regexp.MustCompile(`(?i)https?://[^\s"'\x60<>\\]+|(?:\.\.?/|/)[A-Za-z0-9_~!$&()*+,;=:@%./?\-]+`)
 	graphqlPathSegment  = regexp.MustCompile(`(?i)(?:^|/)(?:graphql|gql)(?:/|$)`)
 	graphqlMarkers      = []string{"graphiql", "graphql playground", "graphqlplayground", "apollo sandbox", "apollosandbox", "apollo server", "apolloserver", "must provide query string", "__schema", "apolloclient", "createhttplink", "graphqlclient", "urql", "relayenvironment", "graphql-ws"}
 	endpointHints       = []string{`"uri"`, "'uri'", "uri:", "uri =", "endpoint", "fetch(", "graphqlclient", "createhttplink", "subscriptionclient"}
@@ -490,28 +486,40 @@ func nearTerm(match []int, indexes []int) bool {
 }
 
 func linkReferences(body []byte) []string {
-	return tagAttributeValues(body, anchorPattern, hrefPattern)
+	return tagAttributeValues(body, "a", "href")
 }
 
 func scriptReferences(body []byte) []string {
-	return tagAttributeValues(body, scriptPattern, srcPattern)
+	return tagAttributeValues(body, "script", "src")
 }
 
-func tagAttributeValues(body []byte, tagPattern *regexp.Regexp, attributePattern *regexp.Regexp) []string {
+func tagAttributeValues(body []byte, tagName string, attributeName string) []string {
+	tokenizer := htmltokenizer.NewTokenizer(bytes.NewReader(body))
+	tagNameBytes := []byte(tagName)
+	attributeNameBytes := []byte(attributeName)
 	var values []string
-	for _, tag := range tagPattern.FindAll(body, -1) {
-		match := attributePattern.FindSubmatch(tag)
-		if len(match) < 2 {
+	for {
+		tokenType := tokenizer.Next()
+		if tokenType == htmltokenizer.ErrorToken {
+			return values
+		}
+		if tokenType != htmltokenizer.StartTagToken && tokenType != htmltokenizer.SelfClosingTagToken {
 			continue
 		}
-		for _, group := range match[1:] {
-			if len(group) > 0 {
-				values = append(values, html.UnescapeString(string(group)))
+
+		name, hasAttributes := tokenizer.TagName()
+		if !bytes.Equal(name, tagNameBytes) {
+			continue
+		}
+		for hasAttributes {
+			key, value, moreAttributes := tokenizer.TagAttr()
+			hasAttributes = moreAttributes
+			if bytes.Equal(key, attributeNameBytes) {
+				values = append(values, string(value))
 				break
 			}
 		}
 	}
-	return values
 }
 
 func resolveHTTPReference(baseRawURL string, reference string) (string, bool) {
