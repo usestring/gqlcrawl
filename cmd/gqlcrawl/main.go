@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -21,7 +22,7 @@ import (
 	"github.com/usestring/gqlcrawl/internal/source"
 )
 
-const version = "dev"
+var version = "dev"
 
 var errHelp = errors.New("help requested")
 
@@ -86,7 +87,7 @@ func run(ctx context.Context, arguments []string, stdin io.Reader, stdout io.Wri
 		writeRootHelp(stdout)
 		return 0
 	case "version", "--version":
-		fmt.Fprintln(stdout, version)
+		fmt.Fprintln(stdout, buildVersion())
 		return 0
 	case "probe":
 		return runProbe(ctx, arguments[1:], stdin, stdout, stderr)
@@ -97,6 +98,17 @@ func run(ctx context.Context, arguments []string, stdin io.Reader, stdout io.Wri
 		writeRootHelp(stderr)
 		return 2
 	}
+}
+
+func buildVersion() string {
+	if version != "dev" {
+		return version
+	}
+	buildInfo, ok := debug.ReadBuildInfo()
+	if ok && buildInfo.Main.Version != "" && buildInfo.Main.Version != "(devel)" {
+		return buildInfo.Main.Version
+	}
+	return version
 }
 
 func runProbe(ctx context.Context, arguments []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

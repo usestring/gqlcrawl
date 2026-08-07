@@ -22,3 +22,10 @@ jobs:
           cache: true
       - run: go test -race ./...
       - run: go vet ./...
+      - name: Verify release packaging
+        run: |
+          release_directory="$RUNNER_TEMP/gqlcrawl-release"
+          ./scripts/build-release.sh v0.0.0 "$release_directory"
+          test "$("$release_directory/gqlcrawl_0.0.0_linux_amd64" version)" = "v0.0.0"
+          cd "$release_directory"
+          sha256sum --check checksums.txt
