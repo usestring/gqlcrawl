@@ -22,6 +22,8 @@ jobs:
           cache: true
       - run: go test -race ./...
       - run: go vet ./...
+      - name: Verify release ref handling
+        run: ./scripts/verify-release-ref_test.sh
       - name: Verify release packaging
         run: |
           release_directory="$RUNNER_TEMP/gqlcrawl-release"
