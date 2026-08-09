@@ -25,13 +25,9 @@ if [[ "$(git cat-file -t "$tag_ref")" != "tag" ]]; then
 fi
 
 release_commit="$(git rev-parse --verify "${tag_ref}^{commit}")"
-checked_out_commit="$(git rev-parse --verify 'HEAD^{commit}')"
-if [[ "$release_commit" != "$checked_out_commit" ]]; then
-  echo "release tag does not resolve to the checked-out commit: ${release_tag}" >&2
-  exit 1
-fi
-
 if ! git merge-base --is-ancestor "$release_commit" "$main_ref"; then
   echo "release commit is not on origin/main: ${release_commit}" >&2
   exit 1
 fi
+
+printf '%s\n' "$release_commit"

@@ -54,7 +54,7 @@ go install github.com/usestring/gqlcrawl/cmd/gqlcrawl@latest
 
 Tagged releases also publish Linux, macOS, and Windows binaries with SHA-256 checksums on the [GitHub releases page](https://github.com/usestring/gqlcrawl/releases).
 
-Maintainers publish from an existing annotated `vMAJOR.MINOR.PATCH` tag on `main`. If its automatic release run fails, recover the same immutable tag from **Actions → Release → Run workflow** by entering the existing tag name. The workflow refetches the remote tag object and rejects lightweight tags, a checkout at any other commit, and commits outside `main` before it builds or publishes anything. Never replace a published tag to recover a release.
+Maintainers publish from an existing annotated `vMAJOR.MINOR.PATCH` tag on `main`. If its automatic release run fails, recover the same immutable tag from **Actions → Release → Run workflow** by entering the existing tag name. The workflow uses its current recovery code to resolve and validate the remote tag, then checks out that exact release commit before testing, building, or publishing. It rejects lightweight tags and commits outside `main`. Never replace a published tag to recover a release.
 
 ```sh
 go build ./cmd/gqlcrawl

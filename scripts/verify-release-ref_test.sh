@@ -22,16 +22,47 @@ git -C "$source_repository" remote add origin "$remote_repository"
 annotated_tag="v1.2.3"
 git -C "$source_repository" tag --annotate "$annotated_tag" --message "$annotated_tag"
 git -C "$source_repository" push origin main "refs/tags/${annotated_tag}" >/dev/null
-git clone "$remote_repository" "$runner_repository" >/dev/null 2>&1
-
 release_commit="$(git -C "$source_repository" rev-parse HEAD)"
+
+mkdir -p "${source_repository}/scripts"
+cp "$script_directory/verify-release-ref.sh" "${source_repository}/scripts/verify-release-ref.sh"
+printf '%s\n' next >> "${source_repository}/fixture.txt"
+git -C "$source_repository" add fixture.txt scripts/verify-release-ref.sh
+git -C "$source_repository" commit -m "Add release recovery source" >/dev/null
+git -C "$source_repository" push origin main >/dev/null
+
+git clone "$remote_repository" "$runner_repository" >/dev/null 2>&1
 git -C "$runner_repository" update-ref "refs/tags/${annotated_tag}" "$release_commit"
 test "$(git -C "$runner_repository" cat-file -t "refs/tags/${annotated_tag}")" = "commit"
-(
+git -C "$runner_repository" checkout --detach "$release_commit" >/dev/null 2>&1
+tag_push_commit="$(
   cd "$runner_repository"
   "$script_directory/verify-release-ref.sh" "$annotated_tag"
-)
+)"
+test "$tag_push_commit" = "$release_commit"
 test "$(git -C "$runner_repository" cat-file -t "refs/tags/${annotated_tag}")" = "tag"
+
+git -C "$runner_repository" checkout --detach origin/main >/dev/null 2>&1
+git -C "$runner_repository" update-ref "refs/tags/${annotated_tag}" "$release_commit"
+test "$(git -C "$runner_repository" cat-file -t "refs/tags/${annotated_tag}")" = "commit"
+recovery_commit="$(
+  cd "$runner_repository"
+  ./scripts/verify-release-ref.sh "$annotated_tag"
+)"
+test "$recovery_commit" = "$release_commit"
+git -C "$runner_repository" checkout --detach "$recovery_commit" >/dev/null 2>&1
+test "$(git -C "$runner_repository" rev-parse --verify 'HEAD^{commit}')" = "$release_commit"
+test ! -e "${runner_repository}/scripts/verify-release-ref.sh"
+
+invalid_tag="release-1.2.3"
+if (
+  cd "$runner_repository"
+  "$script_directory/verify-release-ref.sh" "$invalid_tag"
+) >"${test_root}/invalid.out" 2>&1; then
+  echo "expected invalid tag verification to fail" >&2
+  exit 1
+fi
+grep -F "release tag must match vMAJOR.MINOR.PATCH" "${test_root}/invalid.out" >/dev/null
 
 lightweight_tag="v1.2.4"
 git -C "$source_repository" tag "$lightweight_tag"
@@ -44,21 +75,6 @@ if (
   exit 1
 fi
 grep -F "release tag must be annotated: ${lightweight_tag}" "${test_root}/lightweight.out" >/dev/null
-
-printf '%s\n' next >> "${source_repository}/fixture.txt"
-git -C "$source_repository" add fixture.txt
-git -C "$source_repository" commit -m "Advance main" >/dev/null
-git -C "$source_repository" push origin main >/dev/null
-git -C "$runner_repository" fetch --no-tags origin main >/dev/null
-git -C "$runner_repository" checkout --detach origin/main >/dev/null 2>&1
-if (
-  cd "$runner_repository"
-  "$script_directory/verify-release-ref.sh" "$annotated_tag"
-) >"${test_root}/mismatched-checkout.out" 2>&1; then
-  echo "expected mismatched checkout verification to fail" >&2
-  exit 1
-fi
-grep -F "release tag does not resolve to the checked-out commit: ${annotated_tag}" "${test_root}/mismatched-checkout.out" >/dev/null
 
 git -C "$source_repository" switch --detach "$release_commit" >/dev/null 2>&1
 printf '%s\n' side > "${source_repository}/side.txt"

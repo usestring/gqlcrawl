@@ -29,13 +29,21 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ env.RELEASE_TAG }}
+      - name: Verify release ref
+        id: release
+        run: |
+          release_commit="$(./scripts/verify-release-ref.sh "$RELEASE_TAG")"
+          printf 'commit=%s\n' "$release_commit" >> "$GITHUB_OUTPUT"
+      - name: Check out verified release source
+        env:
+          RELEASE_COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          git checkout --detach "$RELEASE_COMMIT"
+          test "$(git rev-parse --verify 'HEAD^{commit}')" = "$RELEASE_COMMIT"
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
           cache: true
-      - name: Verify release ref
-        run: ./scripts/verify-release-ref.sh "$RELEASE_TAG"
       - run: go test -race ./...
       - run: go vet ./...
       - name: Build release artifacts
