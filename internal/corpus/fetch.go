@@ -45,6 +45,41 @@ func Get(ctx context.Context, request Request, target string, accept string) ([]
 	return body, nil
 }
 
+func GetRange(ctx context.Context, request Request, target string, accept string, maxBytes int64) ([]byte, error) {
+	if request.Fetcher == nil {
+		return nil, fmt.Errorf("no fetcher configured")
+	}
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("range limit must be positive")
+	}
+
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	httpRequest.Header.Set("User-Agent", request.UserAgent)
+	if accept != "" {
+		httpRequest.Header.Set("Accept", accept)
+	}
+	httpRequest.Header.Set("Range", fmt.Sprintf("bytes=0-%d", maxBytes-1))
+
+	response, err := request.Fetcher.Do(httpRequest)
+	if err != nil {
+		return nil, fmt.Errorf("fetch: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
+		return nil, fmt.Errorf("unexpected status %d", response.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	return body, nil
+}
+
 func GetJSON(ctx context.Context, request Request, target string, destination any) error {
 	body, err := Get(ctx, request, target, "application/json")
 	if err != nil {
