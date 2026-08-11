@@ -59,6 +59,7 @@ type seedsConfig struct {
 	contact          string
 	allowHTTP        bool
 	listSources      bool
+	options          map[string]string
 }
 
 type probeRuntime struct {
@@ -84,6 +85,7 @@ func defaultSeedsConfig() seedsConfig {
 		perHostRPS:       1,
 		timeout:          30 * time.Second,
 		maxDownloadBytes: corpus.DefaultMaxDownloadBytes,
+		options:          map[string]string{},
 	}
 }
 
@@ -267,6 +269,7 @@ func runSeeds(ctx context.Context, arguments []string, stdin io.Reader, stdout i
 	seeds, err := adapter.Fetch(ctx, corpus.Request{
 		Limit:            config.limit,
 		Scope:            scope,
+		Options:          config.options,
 		Fetcher:          client,
 		UserAgent:        userAgent,
 		MaxDownloadBytes: config.maxDownloadBytes,
@@ -431,6 +434,13 @@ func parseSeedsArguments(arguments []string) (seedsConfig, []string, error) {
 		switch name {
 		case "source":
 			config.source = value
+		case "option":
+			optionName, optionValue, found := strings.Cut(value, "=")
+			optionName = strings.TrimSpace(optionName)
+			if !found || optionName == "" {
+				return config, nil, fmt.Errorf("--option must be given as key=value")
+			}
+			config.options[optionName] = optionValue
 		case "input":
 			config.inputPath = value
 		case "format":
@@ -621,6 +631,7 @@ func writeSeedsHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  --source NAME               Corpus adapter to read (required)")
 	fmt.Fprintln(writer, "  --list-sources              List available corpus adapters and exit")
 	fmt.Fprintln(writer, "  --limit N                   Maximum seeds to emit (default 1000)")
+	fmt.Fprintln(writer, "  --option KEY=VALUE          Adapter-specific setting; repeatable")
 	fmt.Fprintln(writer, "  --input FILE|-              Read additional scope entries from a file or stdin")
 	fmt.Fprintln(writer, "  --format lines|jsonl        Output format (default lines)")
 	fmt.Fprintln(writer, "  --max-download-bytes N      Corpus response limit (default 67108864)")

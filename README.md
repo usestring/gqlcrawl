@@ -143,6 +143,7 @@ Sources that require credentials read them from the environment and fail closed 
 --source NAME
 --list-sources
 --limit 1000
+--option KEY=VALUE
 --input FILE|-
 --format lines|jsonl
 --max-download-bytes 67108864

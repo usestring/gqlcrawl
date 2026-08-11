@@ -32,6 +32,7 @@ type Requirement struct {
 type Request struct {
 	Limit            int
 	Scope            []string
+	Options          map[string]string
 	Fetcher          Fetcher
 	UserAgent        string
 	MaxDownloadBytes int64
@@ -74,6 +75,18 @@ func Lookup(name string) (Adapter, error) {
 		}
 	}
 	return nil, fmt.Errorf("unknown source %q; available sources: %s", name, strings.Join(Names(), ", "))
+}
+
+func (r Request) Option(name string, fallback string) string {
+	value, ok := r.Options[name]
+	if !ok {
+		return fallback
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func (r Request) Credential(name string) (string, error) {

@@ -148,8 +148,24 @@ func TestParseSeedsArgumentsAcceptsScopeAndOptions(t *testing.T) {
 	}
 }
 
+func TestParseSeedsArgumentsCollectsRepeatedOptions(t *testing.T) {
+	config, _, err := parseSeedsArguments([]string{
+		"--source=example",
+		"--option", "tech=Apollo-GraphQL",
+		"--option=rps=0.5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.options["tech"] != "Apollo-GraphQL" || config.options["rps"] != "0.5" {
+		t.Fatalf("options = %v", config.options)
+	}
+}
+
 func TestParseSeedsArgumentsEnforcesSafetyBounds(t *testing.T) {
 	tests := [][]string{
+		{"--source=example", "--option=novalue"},
+		{"--source=example", "--option==empty-key"},
 		{"--source=tranco", "--limit=0"},
 		{"--source=tranco", "--limit=1000001"},
 		{"--source=tranco", "--format=csv"},

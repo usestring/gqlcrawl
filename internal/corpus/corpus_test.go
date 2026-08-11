@@ -161,6 +161,23 @@ func TestRequestCredentialRequiresValue(t *testing.T) {
 	}
 }
 
+func TestOptionFallsBackWhenUnsetOrBlank(t *testing.T) {
+	request := Request{Options: map[string]string{"tech": " Apollo-GraphQL ", "blank": "   "}}
+
+	if got := request.Option("tech", "GraphQL"); got != "Apollo-GraphQL" {
+		t.Fatalf("Option(tech) = %q", got)
+	}
+	if got := request.Option("blank", "GraphQL"); got != "GraphQL" {
+		t.Fatalf("Option(blank) = %q, want the fallback", got)
+	}
+	if got := request.Option("missing", "GraphQL"); got != "GraphQL" {
+		t.Fatalf("Option(missing) = %q, want the fallback", got)
+	}
+	if got := (Request{}).Option("tech", "GraphQL"); got != "GraphQL" {
+		t.Fatalf("Option on a nil map = %q, want the fallback", got)
+	}
+}
+
 func TestCredentialWithoutLookupFails(t *testing.T) {
 	if _, err := (Request{}).Credential("EXAMPLE_KEY"); err == nil {
 		t.Fatal("Credential succeeded without a lookup function")
