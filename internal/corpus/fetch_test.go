@@ -84,6 +84,47 @@ func TestGetPropagatesTransportError(t *testing.T) {
 	}
 }
 
+func TestGetRangeRequestsBoundedPrefix(t *testing.T) {
+	fetcher := &stubFetcher{response: newResponse(http.StatusPartialContent, "first rows")}
+	request := Request{Fetcher: fetcher, UserAgent: "gqlcrawl/test"}
+
+	body, err := GetRange(context.Background(), request, "https://corpus.example/big.csv", "text/csv", 64)
+	if err != nil {
+		t.Fatalf("GetRange returned error: %v", err)
+	}
+	if string(body) != "first rows" {
+		t.Fatalf("body = %q", body)
+	}
+	if got := fetcher.request.Header.Get("Range"); got != "bytes=0-63" {
+		t.Fatalf("Range = %q, want \"bytes=0-63\"", got)
+	}
+}
+
+func TestGetRangeTruncatesRatherThanFailing(t *testing.T) {
+	fetcher := &stubFetcher{response: newResponse(http.StatusOK, strings.Repeat("a", 100))}
+	request := Request{Fetcher: fetcher, UserAgent: "gqlcrawl/test"}
+
+	body, err := GetRange(context.Background(), request, "https://corpus.example/big.csv", "", 10)
+	if err != nil {
+		t.Fatalf("GetRange returned error: %v", err)
+	}
+	if len(body) != 10 {
+		t.Fatalf("body length = %d, want 10", len(body))
+	}
+}
+
+func TestGetRangeRejectsInvalidLimitAndStatus(t *testing.T) {
+	request := Request{Fetcher: &stubFetcher{response: newResponse(http.StatusOK, "x")}, UserAgent: "gqlcrawl/test"}
+	if _, err := GetRange(context.Background(), request, "https://corpus.example/big.csv", "", 0); err == nil {
+		t.Fatal("GetRange accepted a non-positive limit")
+	}
+
+	failing := Request{Fetcher: &stubFetcher{response: newResponse(http.StatusForbidden, "denied")}, UserAgent: "gqlcrawl/test"}
+	if _, err := GetRange(context.Background(), failing, "https://corpus.example/big.csv", "", 10); err == nil {
+		t.Fatal("GetRange accepted a 403 response")
+	}
+}
+
 func TestGetJSONDecodesIntoDestination(t *testing.T) {
 	fetcher := &stubFetcher{response: newResponse(http.StatusOK, `{"name":"corpus"}`)}
 	request := Request{Fetcher: fetcher, UserAgent: "gqlcrawl/test", MaxDownloadBytes: 1024}
