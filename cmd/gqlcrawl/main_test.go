@@ -129,6 +129,99 @@ func TestRunCrawlHelp(t *testing.T) {
 	}
 }
 
+func TestParseSeedsArgumentsAcceptsScopeAndOptions(t *testing.T) {
+	config, scope, err := parseSeedsArguments([]string{
+		"example.test",
+		"--source", "tranco",
+		"--limit=25",
+		"--format", "jsonl",
+		"other.test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.source != "tranco" || config.limit != 25 || config.format != "jsonl" {
+		t.Fatalf("config = %#v", config)
+	}
+	if len(scope) != 2 || scope[0] != "example.test" || scope[1] != "other.test" {
+		t.Fatalf("scope = %v", scope)
+	}
+}
+
+func TestParseSeedsArgumentsEnforcesSafetyBounds(t *testing.T) {
+	tests := [][]string{
+		{"--source=tranco", "--limit=0"},
+		{"--source=tranco", "--limit=1000001"},
+		{"--source=tranco", "--format=csv"},
+		{"--source=tranco", "--timeout=61s"},
+		{"--source=tranco", "--per-host-rps=10.1"},
+		{"--source=tranco", "--max-download-bytes=0"},
+		{"--source=tranco", "--unknown-option=1"},
+	}
+	for _, arguments := range tests {
+		if _, _, err := parseSeedsArguments(arguments); err == nil {
+			t.Fatalf("arguments %v were accepted", arguments)
+		}
+	}
+}
+
+func TestRunSeedsHelp(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := run(
+		context.Background(),
+		[]string{"seeds", "--help"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 0 {
+		t.Fatalf("exit code = %d", exitCode)
+	}
+	if !strings.Contains(stdout.String(), "--source NAME") ||
+		!strings.Contains(stdout.String(), "never contacts") {
+		t.Fatalf("help = %q", stdout.String())
+	}
+}
+
+func TestRunSeedsRejectsUnknownSource(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := run(
+		context.Background(),
+		[]string{"seeds", "--source=does-not-exist"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 2 {
+		t.Fatalf("exit code = %d", exitCode)
+	}
+	if !strings.Contains(stderr.String(), "unknown source") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestLoadScopeCombinesArgumentsAndInput(t *testing.T) {
+	scope, err := loadScope([]string{"one.test", "  "}, "-", strings.NewReader("two.test\n# comment\n\nthree.test\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scope) != 3 || scope[0] != "one.test" || scope[1] != "two.test" || scope[2] != "three.test" {
+		t.Fatalf("scope = %v", scope)
+	}
+}
+
+func TestLoadScopeIgnoresStdinWithoutInputFlag(t *testing.T) {
+	scope, err := loadScope([]string{"one.test"}, "", strings.NewReader("two.test\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scope) != 1 || scope[0] != "one.test" {
+		t.Fatalf("scope = %v", scope)
+	}
+}
+
 func TestRunVersionUsesInjectedVersion(t *testing.T) {
 	originalVersion := version
 	version = "v1.2.3"

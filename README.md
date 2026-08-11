@@ -2,13 +2,13 @@
 
 Find public GraphQL endpoints that expose introspection, without turning discovery into exploitation.
 
-`gqlcrawl` is an early-stage Go CLI from [String](https://www.usestring.ai/). Use `probe` for exact public endpoint URLs or `crawl` to find literal GraphQL endpoint evidence on supplied public sites before running the same read-only probe. Corpus adapters and explicit full-schema export are planned as separately reviewed additions.
+`gqlcrawl` is an early-stage Go CLI from [String](https://www.usestring.ai/). Use `probe` for exact public endpoint URLs or `crawl` to find literal GraphQL endpoint evidence on supplied public sites before running the same read-only probe. Use `seeds` to turn a public corpus into a candidate list without contacting any of it. Explicit full-schema export is planned as a separately reviewed addition.
 
 ## Safety first
 
 Only crawl or probe targets you are authorized to contact. You are responsible for applicable law, terms, and organizational policy.
 
-The CLI intentionally has no flags for authentication headers, cookies, mutations, field guessing, or application-data queries. It also does not publish a hosted endpoint catalog. Every endpoint probe uses:
+The CLI intentionally has no flags for authentication headers, cookies, mutations, field guessing, or application-data queries. It also does not publish a hosted endpoint catalog. `seeds` widens where candidates can come from without changing what the probe sends: it contacts only the corpus provider and emits its results for you to review. Every endpoint probe uses:
 
 ```graphql
 query IntrospectionAvailability {
@@ -119,12 +119,54 @@ Disabling robots handling requires the explicit `--respect-robots=false` flag an
 
 Exit code `0` means the command completed and emitted its available ordered JSONL records; it does not mean introspection was enabled. A crawl that cannot read a permitted page, referenced script, or robots file emits any completed candidate results and exits `1` as incomplete. Exit `2` means the CLI configuration was invalid.
 
+## Corpus seeds
+
+`seeds` reads a public corpus and writes candidate hostnames or URLs to stdout. It contacts only the corpus provider, never the seeds it emits, and it never probes. Piping its output into `crawl` or `probe` is a separate, deliberate step that you own.
+
+```sh
+./gqlcrawl seeds --list-sources
+./gqlcrawl seeds --source SOURCE --limit 500
+./gqlcrawl seeds --source SOURCE --limit 500 | ./gqlcrawl crawl --input -
+```
+
+Adapters that need a scope take it as positional arguments or through `--input`:
+
+```sh
+./gqlcrawl seeds --source SOURCE your-approved-host.example
+```
+
+Seeds are normalized, deduplicated, and truncated to `--limit` before they are written. Host seeds are lowercased with any wildcard label and trailing dot removed; URL seeds keep the probe pipeline's sanitization, so userinfo is dropped and query values become `REDACTED`. Emitting a seed is not authorization to contact it.
+
+Sources that require credentials read them from the environment and fail closed when they are unset. `--list-sources` reports each adapter's required variables and whether it consumes paid credits or query spend. Credentials are never written to output.
+
+```text
+--source NAME
+--list-sources
+--limit 1000
+--input FILE|-
+--format lines|jsonl
+--max-download-bytes 67108864
+--per-host-rps 1
+--timeout 30s
+--denylist FILE
+--contact VALUE
+--allow-http=false
+```
+
+Exit code `0` means the corpus was read and the available seeds were written. A source that fails or returns partial data still writes what it collected and exits `1`. Exit `2` means the configuration was invalid.
+
 ## JSONL
 
 `probe` keeps one source record per input. `crawl` emits one record per unique discovered endpoint, with the sanitized seed in `source.input` and the page or script that supplied the evidence in `source.evidence_url`. Duplicate normalized endpoints are probed once.
 
 ```json
 {"schema_version":"1","endpoint":"https://api.example.invalid/graphql","source":{"kind":"crawl","input":"https://www.example.invalid/","evidence_url":"https://www.example.invalid/app.js"},"checked_at":"2026-08-07T07:00:00Z","http":{"status":200,"content_type":"application/json","bytes":52},"graphql":"confirmed","introspection":"enabled","query_type":"Query","reason":"introspection_enabled"}
+```
+
+`seeds --format jsonl` emits one record per seed with its originating adapter and, where the corpus supplies one, a popularity rank and an evidence string.
+
+```json
+{"schema_version":"1","value":"www.example.invalid","kind":"host","adapter":"example","rank":42}
 ```
 
 URL userinfo is removed and displayed query values are replaced with `REDACTED`. Discovered candidate query strings are dropped before probing. Headers, response bodies, and schema details never enter output.
