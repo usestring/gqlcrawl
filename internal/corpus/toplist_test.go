@@ -12,30 +12,6 @@ import (
 	"github.com/usestring/gqlcrawl/internal/model"
 )
 
-type routedFetcher struct {
-	responses map[string]*http.Response
-	requested []*http.Request
-}
-
-func (f *routedFetcher) Do(request *http.Request) (*http.Response, error) {
-	f.requested = append(f.requested, request)
-	for pattern, response := range f.responses {
-		if strings.Contains(request.URL.String(), pattern) {
-			return response, nil
-		}
-	}
-	return newResponse(http.StatusNotFound, "no stub"), nil
-}
-
-func baseRequest(fetcher Fetcher, limit int) Request {
-	return Request{
-		Limit:            limit,
-		Fetcher:          fetcher,
-		UserAgent:        "gqlcrawl/test",
-		MaxDownloadBytes: DefaultMaxDownloadBytes,
-	}
-}
-
 func TestParseRankedCSVHandlesCRLFAndHeaders(t *testing.T) {
 	rows, err := parseRankedCSV([]byte("1,one.example\r\n2,two.example\r\n"), 0, 1, false, 10)
 	if err != nil {
