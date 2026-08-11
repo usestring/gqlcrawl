@@ -163,11 +163,13 @@ Exit code `0` means the corpus was read and the available seeds were written. A 
 {"schema_version":"1","endpoint":"https://api.example.invalid/graphql","source":{"kind":"crawl","input":"https://www.example.invalid/","evidence_url":"https://www.example.invalid/app.js"},"checked_at":"2026-08-07T07:00:00Z","http":{"status":200,"content_type":"application/json","bytes":52},"graphql":"confirmed","introspection":"enabled","query_type":"Query","reason":"introspection_enabled"}
 ```
 
-`seeds --format jsonl` emits one record per seed with its originating adapter and, where the corpus supplies one, a popularity rank and an evidence string.
+`seeds --format jsonl` emits one record per seed with its originating adapter and, where the corpus supplies one, a rank and an evidence string.
 
 ```json
-{"schema_version":"1","value":"www.example.invalid","kind":"host","adapter":"example","rank":42}
+{"schema_version":"1","value":"www.example.invalid","kind":"host","adapter":"example","rank":42,"rank_kind":"ordinal"}
 ```
+
+Corpora do not agree on what a rank means, so `rank_kind` states which one applies. `ordinal` is a meaningful 1..N position. `bucket` means the value is a magnitude ceiling and membership within it is unordered. `member` means the corpus supplies set membership only, and `rank` is omitted. A seed with no rank at all omits both fields.
 
 URL userinfo is removed and displayed query values are replaced with `REDACTED`. Discovered candidate query strings are dropped before probing. Headers, response bodies, and schema details never enter output.
 

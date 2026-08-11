@@ -57,6 +57,51 @@ func TestNormalizeStampsSchemaVersionAndRedactsQuery(t *testing.T) {
 	}
 }
 
+func TestNormalizeSeparatesRankSemantics(t *testing.T) {
+	ordinal, err := Normalize(model.Seed{Value: "one.example", Kind: model.SeedHost, Rank: 7, RankKind: model.RankOrdinal})
+	if err != nil {
+		t.Fatalf("ordinal rank rejected: %v", err)
+	}
+	if ordinal.Rank != 7 || ordinal.RankKind != model.RankOrdinal {
+		t.Fatalf("ordinal seed = %+v", ordinal)
+	}
+
+	bucket, err := Normalize(model.Seed{Value: "two.example", Kind: model.SeedHost, Rank: 1000, RankKind: model.RankBucket})
+	if err != nil {
+		t.Fatalf("bucket rank rejected: %v", err)
+	}
+	if bucket.Rank != 1000 || bucket.RankKind != model.RankBucket {
+		t.Fatalf("bucket seed = %+v", bucket)
+	}
+
+	member, err := Normalize(model.Seed{Value: "three.example", Kind: model.SeedHost, Rank: 42, RankKind: model.RankMember})
+	if err != nil {
+		t.Fatalf("member rank rejected: %v", err)
+	}
+	if member.Rank != 0 {
+		t.Fatalf("set-membership seed kept a rank: %+v", member)
+	}
+
+	unranked, err := Normalize(model.Seed{Value: "four.example", Kind: model.SeedHost, Rank: 9})
+	if err != nil {
+		t.Fatalf("unranked seed rejected: %v", err)
+	}
+	if unranked.Rank != 0 {
+		t.Fatalf("unranked seed kept a rank: %+v", unranked)
+	}
+}
+
+func TestNormalizeRejectsRankedSeedWithoutValue(t *testing.T) {
+	for _, kind := range []model.RankKind{model.RankOrdinal, model.RankBucket} {
+		if _, err := Normalize(model.Seed{Value: "example.com", Kind: model.SeedHost, RankKind: kind}); err == nil {
+			t.Fatalf("%s rank accepted a zero value", kind)
+		}
+	}
+	if _, err := Normalize(model.Seed{Value: "example.com", Kind: model.SeedHost, RankKind: model.RankKind("made-up")}); err == nil {
+		t.Fatal("Normalize accepted an unsupported rank kind")
+	}
+}
+
 func TestCollectDeduplicatesAndCaps(t *testing.T) {
 	seeds := []model.Seed{
 		{Value: "Example.com", Kind: model.SeedHost, Adapter: "test"},

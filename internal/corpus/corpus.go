@@ -141,6 +141,20 @@ func Normalize(seed model.Seed) (model.Seed, error) {
 	if seed.Rank < 0 {
 		seed.Rank = 0
 	}
+
+	switch seed.RankKind {
+	case model.RankNone:
+		seed.Rank = 0
+	case model.RankMember:
+		seed.Rank = 0
+	case model.RankOrdinal, model.RankBucket:
+		if seed.Rank == 0 {
+			return model.Seed{}, fmt.Errorf("%s rank requires a positive value", seed.RankKind)
+		}
+	default:
+		return model.Seed{}, fmt.Errorf("unsupported rank kind %q", seed.RankKind)
+	}
+
 	return seed, nil
 }
 
