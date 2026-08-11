@@ -137,6 +137,14 @@ Adapters that need a scope take it as positional arguments or through `--input`:
 
 Seeds are normalized, deduplicated, and truncated to `--limit` before they are written. Host seeds are lowercased with any wildcard label and trailing dot removed; URL seeds keep the probe pipeline's sanitization, so userinfo is dropped and query values become `REDACTED`. Emitting a seed is not authorization to contact it.
 
+App store sources:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `applecharts` | ordinal | none | App Store top charts joined to each app's publisher site. `--option feed=top-free\|top-paid`, `--option country=us,gb,de`. |
+
+`applecharts` emits the publisher's own site, which is not the app's backend API host. Recovering backend hosts would require analyzing the app binary; the supported path is to feed these domains to `crawl`, which already looks for GraphQL evidence on them. Apple documents roughly twenty lookup calls per minute, so lower `--per-host-rps` for wide sweeps. Google Play has no official charts API and the endpoint its scrapers use is disallowed by that site's `robots.txt`, so no Play source is provided.
+
 Sources that require credentials read them from the environment and fail closed when they are unset. `--list-sources` reports each adapter's required variables and whether it consumes paid credits or query spend. Credentials are never written to output.
 
 ```text
