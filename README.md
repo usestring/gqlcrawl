@@ -137,6 +137,19 @@ Adapters that need a scope take it as positional arguments or through `--input`:
 
 Seeds are normalized, deduplicated, and truncated to `--limit` before they are written. Host seeds are lowercased with any wildcard label and trailing dot removed; URL seeds keep the probe pipeline's sanitization, so userinfo is dropped and query values become `REDACTED`. Emitting a seed is not authorization to contact it.
 
+Certificate Transparency sources take one or more domains as scope and return the hostnames that appear in logged certificates:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `certspotter` | none | `CERTSPOTTER_API_KEY` optional | Preferred. Pages through issuances by cursor. Unauthenticated use is evaluation-grade and rate limited near ten full-domain queries per hour. |
+| `crtsh` | none | none | Fallback only. Rate limited near five requests per minute, frequently unavailable, and it can answer `200` with a silently truncated result, so treat a run as a lower bound. |
+
+```sh
+./gqlcrawl seeds --source certspotter your-approved-host.example
+```
+
+Both sources match loosely on their side, so results are filtered locally to the requested domain and its subdomains. A lookalike such as `notyourhost.example` or `your-approved-host.example.other.test` is dropped rather than emitted. Certificate hostnames are historical records, so many will no longer resolve.
+
 Sources that require credentials read them from the environment and fail closed when they are unset. `--list-sources` reports each adapter's required variables and whether it consumes paid credits or query spend. Credentials are never written to output.
 
 ```text
