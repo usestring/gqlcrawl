@@ -48,7 +48,11 @@ type Adapter interface {
 }
 
 func All() []Adapter {
-	adapters := []Adapter{}
+	adapters := []Adapter{
+		majesticAdapter{},
+		trancoAdapter{},
+		umbrellaAdapter{},
+	}
 	sort.Slice(adapters, func(first int, second int) bool {
 		return adapters[first].Name() < adapters[second].Name()
 	})
