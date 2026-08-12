@@ -137,6 +137,18 @@ Adapters that need a scope take it as positional arguments or through `--input`:
 
 Seeds are normalized, deduplicated, and truncated to `--limit` before they are written. Host seeds are lowercased with any wildcard label and trailing dot removed; URL seeds keep the probe pipeline's sanitization, so userinfo is dropped and query values become `REDACTED`. Emitting a seed is not authorization to contact it.
 
+One source reads an export rather than an API:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `httparchive` | bucket when the export has a `rank` column | none | Sites HTTP Archive detected as using GraphQL, read from a CSV you export from BigQuery yourself. |
+
+```sh
+./gqlcrawl seeds --source httparchive --input graphql-sites.csv --limit 500
+```
+
+The query, its cost, and what the GraphQL label actually means are in [docs/httparchive.md](docs/httparchive.md). Reading an export instead of querying BigQuery keeps this tool's dependency list empty and leaves the query editable and billed to your own project. Read that document before trusting a result set: the label is inherited from Apollo and about nine commerce platforms far more often than it is matched directly.
+
 Sources that require credentials read them from the environment and fail closed when they are unset. `--list-sources` reports each adapter's required variables and whether it consumes paid credits or query spend. Credentials are never written to output.
 
 ```text
