@@ -137,6 +137,17 @@ Adapters that need a scope take it as positional arguments or through `--input`:
 
 Seeds are normalized, deduplicated, and truncated to `--limit` before they are written. Host seeds are lowercased with any wildcard label and trailing dot removed; URL seeds keep the probe pipeline's sanitization, so userinfo is dropped and query values become `REDACTED`. Emitting a seed is not authorization to contact it.
 
+URL-index sources search an archive for paths that already contain a pattern, so they emit URL seeds rather than hosts:
+
+| Source | Scope | Credentials | Notes |
+| --- | --- | --- | --- |
+| `wayback` | domains | none | Internet Archive CDX server. Signals throttling with `503` and no rate headers. |
+| `commoncrawl` | domains | none | Common Crawl index. Asks for single-threaded access; a blocked address stays blocked for about a day. |
+
+Neither index supports a global path search: both require a domain scope, so these widen coverage within sites you already have rather than finding new ones. `--option pattern=VALUE` sets the path substring to match (default `graphql`) and is applied literally on both, despite the two servers disagreeing on filter syntax. `--option matchtype=exact|prefix|host|domain` narrows the scope from the default `domain`. `wayback` also takes `--option from=` and `--option to=` (`yyyyMMddhhmmss`) and `--option status=` to keep one capture status; `commoncrawl` takes `--option crawl=CC-MAIN-YYYY-WW` to pin a crawl instead of using the newest.
+
+Both indexes harvest URLs from JavaScript, so unexpanded template literals such as `https://example.com/${region}/graphql` appear as ordinary rows. They are dropped: they describe a path shape, not an address. Every emitted URL is a historical capture and may no longer resolve.
+
 Sources that require credentials read them from the environment and fail closed when they are unset. `--list-sources` reports each adapter's required variables and whether it consumes paid credits or query spend. Credentials are never written to output.
 
 ```text
