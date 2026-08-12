@@ -55,6 +55,7 @@ func All() []Adapter {
 		commonCrawlAdapter{},
 		crtShAdapter{},
 		cruxAdapter{},
+		httpArchiveAdapter{},
 		majesticAdapter{},
 		radarAdapter{},
 		shodanAdapter{},

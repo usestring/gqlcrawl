@@ -197,6 +197,17 @@ Commercial technology-intelligence sources, both of which need a paid account:
 Neither vendor publishes a usable identifier for GraphQL, so both take the name as configuration rather than baking one in. `shodan` defaults to `http.component:GraphQL` — a value Shodan does not document, since it publishes no enumeration of legal `http.component` values at all — and accepts `--option component=` or a full `--option query=`. `builtwith` defaults to `Apollo-GraphQL`, the only GraphQL-related technology whose BuiltWith page could be confirmed, and accepts `--option tech=` plus `othertechs`, `country`, and `since`.
 
 Both endpoints authenticate with a query parameter, because neither documents header authentication for the endpoint used here. Transport errors are rewritten to remove the key before they reach stderr.
+One source reads an export rather than an API:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `httparchive` | bucket when the export has a `rank` column | none | Sites HTTP Archive detected as using GraphQL, read from a CSV you export from BigQuery yourself. |
+
+```sh
+./gqlcrawl seeds --source httparchive --input graphql-sites.csv --limit 500
+```
+
+The query, its cost, and what the GraphQL label actually means are in [docs/httparchive.md](docs/httparchive.md). Reading an export instead of querying BigQuery keeps this tool's dependency list empty and leaves the query editable and billed to your own project. Read that document before trusting a result set: the label is inherited from Apollo and about nine commerce platforms far more often than it is matched directly.
 
 Sources that require credentials read them from the environment and fail closed when they are unset. `--list-sources` reports each adapter's required variables and whether it consumes paid credits or query spend. Credentials are never written to output.
 
