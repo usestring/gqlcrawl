@@ -51,10 +51,12 @@ func All() []Adapter {
 	adapters := []Adapter{
 		appleChartsAdapter{},
 		certSpotterAdapter{},
+		commonCrawlAdapter{},
 		crtShAdapter{},
 		majesticAdapter{},
 		trancoAdapter{},
 		umbrellaAdapter{},
+		waybackAdapter{},
 	}
 	sort.Slice(adapters, func(first int, second int) bool {
 		return adapters[first].Name() < adapters[second].Name()
