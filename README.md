@@ -137,6 +137,17 @@ Adapters that need a scope take it as positional arguments or through `--input`:
 
 Seeds are normalized, deduplicated, and truncated to `--limit` before they are written. Host seeds are lowercased with any wildcard label and trailing dot removed; URL seeds keep the probe pipeline's sanitization, so userinfo is dropped and query values become `REDACTED`. Emitting a seed is not authorization to contact it.
 
+Popularity sources that do not report a position:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `crux` | bucket | none | Chrome User Experience Report origins, read from the `zakird/crux-top-lists` mirror. |
+| `radar` | ordinal, or member with `--option bucket=` | `CLOUDFLARE_API_TOKEN` | Cloudflare Radar. A free account is enough; the token needs Account → Radar → Read. |
+
+`crux` reports a magnitude bucket: the value is the bucket ceiling and order inside a bucket is arbitrary, so `rank_kind` is `bucket` and sorting on `rank` orders the groups, not the members. `--option month=YYYYMM` reads a monthly archive instead of the rolling current list, and `--option country=CC` reads a country list, which is published monthly only and therefore requires `month`. Origins arrive with a scheme and are normalized to hosts.
+
+`radar` returns the top 100 with real ordinal ranks by default, narrowed by `--option location=` and `--option date=`. `--option bucket=N` switches to a published bucket dataset for one of 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, or 1000000. Those datasets carry no rank column at all, so their seeds are `member`: the corpus asserts set membership and nothing about order. Radar data is CC BY-NC 4.0, which restricts commercial use of the results independently of this tool's license.
+
 Sources that require credentials read them from the environment and fail closed when they are unset. `--list-sources` reports each adapter's required variables and whether it consumes paid credits or query spend. Credentials are never written to output.
 
 ```text
