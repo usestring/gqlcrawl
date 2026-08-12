@@ -137,6 +137,17 @@ Adapters that need a scope take it as positional arguments or through `--input`:
 
 Seeds are normalized, deduplicated, and truncated to `--limit` before they are written. Host seeds are lowercased with any wildcard label and trailing dot removed; URL seeds keep the probe pipeline's sanitization, so userinfo is dropped and query values become `REDACTED`. Emitting a seed is not authorization to contact it.
 
+Commercial technology-intelligence sources, both of which need a paid account:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `shodan` | none | `SHODAN_API_KEY` | Hosts whose scanned banner matches a web technology query. Any filtered query costs a query credit. |
+| `builtwith` | none | `BUILTWITH_API_KEY` | Domains reported as using a named technology. Lists API access is gated on a subscription tier. |
+
+Neither vendor publishes a usable identifier for GraphQL, so both take the name as configuration rather than baking one in. `shodan` defaults to `http.component:GraphQL` — a value Shodan does not document, since it publishes no enumeration of legal `http.component` values at all — and accepts `--option component=` or a full `--option query=`. `builtwith` defaults to `Apollo-GraphQL`, the only GraphQL-related technology whose BuiltWith page could be confirmed, and accepts `--option tech=` plus `othertechs`, `country`, and `since`.
+
+Both endpoints authenticate with a query parameter, because neither documents header authentication for the endpoint used here. Transport errors are rewritten to remove the key before they reach stderr.
+
 Sources that require credentials read them from the environment and fail closed when they are unset. `--list-sources` reports each adapter's required variables and whether it consumes paid credits or query spend. Credentials are never written to output.
 
 ```text
