@@ -137,6 +137,17 @@ Adapters that need a scope take it as positional arguments or through `--input`:
 
 Seeds are normalized, deduplicated, and truncated to `--limit` before they are written. Host seeds are lowercased with any wildcard label and trailing dot removed; URL seeds keep the probe pipeline's sanitization, so userinfo is dropped and query values become `REDACTED`. Emitting a seed is not authorization to contact it.
 
+Ranked domain sources currently available:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `tranco` | ordinal | none | Research ranking combining five providers. The run reports the list id so published work can cite the exact snapshot. |
+| `umbrella` | ordinal | none | Cisco DNS resolution volume. Entries include subdomains rather than registrable domains. |
+| `majestic` | ordinal | none | Link-graph authority by referring subnets, not traffic. |
+
+These rank different things and are not interchangeable. `--option date=VALUE` selects a published snapshot for `tranco` (`YYYYMMDD`) and `umbrella` (`YYYY-MM-DD`); `--option subdomains=true` switches `tranco` to its subdomain-inclusive list.
+
+None of these lists are vendored into this repository. They are fetched when you run the command, which keeps the data current and leaves each provider's licensing with the provider. Only Majestic publishes a redistribution grant, so treat the others as fetch-only.
 App store sources:
 
 | Source | Ranks | Credentials | Notes |
