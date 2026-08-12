@@ -187,6 +187,16 @@ Popularity sources that do not report a position:
 `crux` reports a magnitude bucket: the value is the bucket ceiling and order inside a bucket is arbitrary, so `rank_kind` is `bucket` and sorting on `rank` orders the groups, not the members. `--option month=YYYYMM` reads a monthly archive instead of the rolling current list, and `--option country=CC` reads a country list, which is published monthly only and therefore requires `month`. Origins arrive with a scheme and are normalized to hosts.
 
 `radar` returns the top 100 with real ordinal ranks by default, narrowed by `--option location=` and `--option date=`. `--option bucket=N` switches to a published bucket dataset for one of 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, or 1000000. Those datasets carry no rank column at all, so their seeds are `member`: the corpus asserts set membership and nothing about order. Radar data is CC BY-NC 4.0, which restricts commercial use of the results independently of this tool's license.
+Commercial technology-intelligence sources, both of which need a paid account:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `shodan` | none | `SHODAN_API_KEY` | Hosts whose scanned banner matches a web technology query. Any filtered query costs a query credit. |
+| `builtwith` | none | `BUILTWITH_API_KEY` | Domains reported as using a named technology. Lists API access is gated on a subscription tier. |
+
+Neither vendor publishes a usable identifier for GraphQL, so both take the name as configuration rather than baking one in. `shodan` defaults to `http.component:GraphQL` — a value Shodan does not document, since it publishes no enumeration of legal `http.component` values at all — and accepts `--option component=` or a full `--option query=`. `builtwith` defaults to `Apollo-GraphQL`, the only GraphQL-related technology whose BuiltWith page could be confirmed, and accepts `--option tech=` plus `othertechs`, `country`, and `since`.
+
+Both endpoints authenticate with a query parameter, because neither documents header authentication for the endpoint used here. Transport errors are rewritten to remove the key before they reach stderr.
 
 Sources that require credentials read them from the environment and fail closed when they are unset. `--list-sources` reports each adapter's required variables and whether it consumes paid credits or query spend. Credentials are never written to output.
 

@@ -50,12 +50,14 @@ type Adapter interface {
 func All() []Adapter {
 	adapters := []Adapter{
 		appleChartsAdapter{},
+		builtWithAdapter{},
 		certSpotterAdapter{},
 		commonCrawlAdapter{},
 		crtShAdapter{},
 		cruxAdapter{},
 		majesticAdapter{},
 		radarAdapter{},
+		shodanAdapter{},
 		trancoAdapter{},
 		umbrellaAdapter{},
 		waybackAdapter{},
