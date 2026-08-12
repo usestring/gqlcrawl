@@ -49,6 +49,7 @@ type Adapter interface {
 
 func All() []Adapter {
 	adapters := []Adapter{
+		appleChartsAdapter{},
 		majesticAdapter{},
 		trancoAdapter{},
 		umbrellaAdapter{},

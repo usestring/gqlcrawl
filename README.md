@@ -148,6 +148,13 @@ Ranked domain sources currently available:
 These rank different things and are not interchangeable. `--option date=VALUE` selects a published snapshot for `tranco` (`YYYYMMDD`) and `umbrella` (`YYYY-MM-DD`); `--option subdomains=true` switches `tranco` to its subdomain-inclusive list.
 
 None of these lists are vendored into this repository. They are fetched when you run the command, which keeps the data current and leaves each provider's licensing with the provider. Only Majestic publishes a redistribution grant, so treat the others as fetch-only.
+App store sources:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `applecharts` | ordinal | none | App Store top charts joined to each app's publisher site. `--option feed=top-free\|top-paid`, `--option country=us,gb,de`. |
+
+`applecharts` emits the publisher's own site, which is not the app's backend API host. Recovering backend hosts would require analyzing the app binary; the supported path is to feed these domains to `crawl`, which already looks for GraphQL evidence on them. Apple documents roughly twenty lookup calls per minute, so lower `--per-host-rps` for wide sweeps. Google Play has no official charts API and the endpoint its scrapers use is disallowed by that site's `robots.txt`, so no Play source is provided.
 
 Sources that require credentials read them from the environment and fail closed when they are unset. `--list-sources` reports each adapter's required variables and whether it consumes paid credits or query spend. Credentials are never written to output.
 
