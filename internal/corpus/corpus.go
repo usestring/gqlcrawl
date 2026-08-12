@@ -50,6 +50,8 @@ type Adapter interface {
 func All() []Adapter {
 	adapters := []Adapter{
 		appleChartsAdapter{},
+		certSpotterAdapter{},
+		crtShAdapter{},
 		majesticAdapter{},
 		trancoAdapter{},
 		umbrellaAdapter{},
