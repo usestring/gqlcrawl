@@ -137,6 +137,36 @@ Adapters that need a scope take it as positional arguments or through `--input`:
 
 Seeds are normalized, deduplicated, and truncated to `--limit` before they are written. Host seeds are lowercased with any wildcard label and trailing dot removed; URL seeds keep the probe pipeline's sanitization, so userinfo is dropped and query values become `REDACTED`. Emitting a seed is not authorization to contact it.
 
+Ranked domain sources currently available:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `tranco` | ordinal | none | Research ranking combining five providers. The run reports the list id so published work can cite the exact snapshot. |
+| `umbrella` | ordinal | none | Cisco DNS resolution volume. Entries include subdomains rather than registrable domains. |
+| `majestic` | ordinal | none | Link-graph authority by referring subnets, not traffic. |
+
+These rank different things and are not interchangeable. `--option date=VALUE` selects a published snapshot for `tranco` (`YYYYMMDD`) and `umbrella` (`YYYY-MM-DD`); `--option subdomains=true` switches `tranco` to its subdomain-inclusive list.
+
+None of these lists are vendored into this repository. They are fetched when you run the command, which keeps the data current and leaves each provider's licensing with the provider. Only Majestic publishes a redistribution grant, so treat the others as fetch-only.
+App store sources:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `applecharts` | ordinal | none | App Store top charts joined to each app's publisher site. `--option feed=top-free\|top-paid`, `--option country=us,gb,de`. |
+
+`applecharts` emits the publisher's own site, which is not the app's backend API host. Recovering backend hosts would require analyzing the app binary; the supported path is to feed these domains to `crawl`, which already looks for GraphQL evidence on them. Apple documents roughly twenty lookup calls per minute, so lower `--per-host-rps` for wide sweeps. Google Play has no official charts API and the endpoint its scrapers use is disallowed by that site's `robots.txt`, so no Play source is provided.
+Certificate Transparency sources take one or more domains as scope and return the hostnames that appear in logged certificates:
+
+| Source | Ranks | Credentials | Notes |
+| --- | --- | --- | --- |
+| `certspotter` | none | `CERTSPOTTER_API_KEY` optional | Preferred. Pages through issuances by cursor. Unauthenticated use is evaluation-grade and rate limited near ten full-domain queries per hour. |
+| `crtsh` | none | none | Fallback only. Rate limited near five requests per minute, frequently unavailable, and it can answer `200` with a silently truncated result, so treat a run as a lower bound. |
+
+```sh
+./gqlcrawl seeds --source certspotter your-approved-host.example
+```
+
+Both sources match loosely on their side, so results are filtered locally to the requested domain and its subdomains. A lookalike such as `notyourhost.example` or `your-approved-host.example.other.test` is dropped rather than emitted. Certificate hostnames are historical records, so many will no longer resolve.
 URL-index sources search an archive for paths that already contain a pattern, so they emit URL seeds rather than hosts:
 
 | Source | Scope | Credentials | Notes |
